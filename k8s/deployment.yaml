@@ -1,0 +1,143 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sre-agent
+  namespace: sre-tools
+  labels:
+    app: sre-agent
+    team: sre
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sre-agent
+  template:
+    metadata:
+      labels:
+        app: sre-agent
+    spec:
+      serviceAccountName: sre-agent
+      containers:
+        - name: sre-agent
+          image: <REGISTRY>/sre-agent:latest
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: LOG_LEVEL
+              value: info
+            - name: BLUEPRINTS_LOCAL_PATH
+              value: /data/blueprints
+            - name: KNOWLEDGE_LOCAL_PATH
+              value: /data/sre-agent-knowledge
+            - name: SLACK_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sre-agent-secrets
+                  key: slack-bot-token
+            - name: SLACK_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: sre-agent-secrets
+                  key: slack-signing-secret
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sre-agent-secrets
+                  key: anthropic-api-key
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: sre-agent-secrets
+                  key: database-url
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sre-agent-secrets
+                  key: github-token
+            - name: SRE_TEAM_SLACK_ID
+              valueFrom:
+                secretKeyRef:
+                  name: sre-agent-secrets
+                  key: sre-team-slack-id
+          volumeMounts:
+            - name: blueprints
+              mountPath: /data/blueprints
+            - name: knowledge
+              mountPath: /data/sre-agent-knowledge
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: blueprints
+          emptyDir: {}   # Sprint 1: populated by init container. Sprint 2: git-sync sidecar.
+        - name: knowledge
+          emptyDir: {}
+      initContainers:
+        - name: clone-repos
+          image: alpine/git:latest
+          command:
+            - sh
+            - -c
+            - |
+              git clone --depth 1 $BLUEPRINTS_REPO_URL /data/blueprints || true
+              git clone --depth 1 $KNOWLEDGE_REPO_URL /data/sre-agent-knowledge || true
+          env:
+            - name: BLUEPRINTS_REPO_URL
+              valueFrom:
+                secretKeyRef:
+                  name: sre-agent-secrets
+                  key: blueprints-repo-url
+            - name: KNOWLEDGE_REPO_URL
+              valueFrom:
+                secretKeyRef:
+                  name: sre-agent-secrets
+                  key: knowledge-repo-url
+          volumeMounts:
+            - name: blueprints
+              mountPath: /data/blueprints
+            - name: knowledge
+              mountPath: /data/sre-agent-knowledge
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sre-agent
+  namespace: sre-tools
+spec:
+  selector:
+    app: sre-agent
+  ports:
+    - port: 80
+      targetPort: 3000
+      name: http
+---
+# Create the secret manually — never commit actual values.
+#
+# kubectl create secret generic sre-agent-secrets \
+#   --from-literal=slack-bot-token=xoxb-... \
+#   --from-literal=slack-signing-secret=... \
+#   --from-literal=anthropic-api-key=sk-ant-... \
+#   --from-literal=database-url=postgresql://... \
+#   --from-literal=github-token=ghp_... \
+#   --from-literal=sre-team-slack-id=S... \
+#   --from-literal=blueprints-repo-url=https://github.com/netlify/blueprints.git \
+#   --from-literal=knowledge-repo-url=https://github.com/netlify/sre-agent-knowledge.git
