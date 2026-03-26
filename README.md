@@ -1,8 +1,7 @@
-# SRE Production Readiness Agent
+# SRE Agent
 
 An AI-powered Slack bot that helps Netlify engineers self-serve on production
-readiness. Developers get on-demand guidance grounded in their actual service
-architecture, without waiting for SRE availability.
+readiness and perform other functions such as manage incidents and deployments. Developers get on-demand guidance grounded in their actual service architecture, without waiting for SRE availability.
 
 ---
 
