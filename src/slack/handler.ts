@@ -16,15 +16,19 @@ import type { WebClient } from "@slack/web-api";
 import {
   getOrCreateSession,
   appendMessage,
+  updateWorkflow,
   logInteraction,
 } from "../db/sessionManager.js";
 import { streamResponse, detectSreTag, extractConfidence } from "../agent/claudeClient.js";
+import { parseGithubUrl } from "../github.js";
+import { advanceWorkflow } from "../workflows/readmeDrafter.js";
+import type { KnowledgeBase, ReadmeDrafterState } from "../types/index.js";
 
 // Update the in-progress Slack message every N characters of streamed output.
 // Lower = more responsive, higher = fewer API calls.
 const STREAM_UPDATE_INTERVAL = 150;
 
-export function registerHandlers(app: App): void {
+export function registerHandlers(app: App, knowledge: KnowledgeBase): void {
   // -------------------------------------------------------------------------
   // app_mention — developer sends @sre-agent in a channel
   // -------------------------------------------------------------------------
@@ -45,6 +49,7 @@ export function registerHandlers(app: App): void {
       messageTs,
       userId,
       client,
+      knowledge,
     });
   });
 
@@ -84,6 +89,7 @@ export function registerHandlers(app: App): void {
       messageTs,
       userId,
       client,
+      knowledge,
     });
   });
 }
@@ -99,6 +105,7 @@ interface ProcessMessageArgs {
   messageTs: string;
   userId: string;
   client: WebClient;
+  knowledge: KnowledgeBase;
 }
 
 async function processMessage({
@@ -108,6 +115,7 @@ async function processMessage({
   messageTs,
   userId,
   client,
+  knowledge,
 }: ProcessMessageArgs): Promise<void> {
   const cleanText = stripBotMention(text);
   if (!cleanText.trim()) return;
@@ -118,12 +126,87 @@ async function processMessage({
 
     // Append user message to history
     await appendMessage(threadTs, "user", cleanText);
+
+    // Check if this message should be routed to the readme-drafter workflow:
+    // - Session has an active readme_drafter workflow state, OR
+    // - Message contains a GitHub URL (auto-start readme-drafter)
+    const wfState = session.workflowState as { workflow?: string };
+    const isReadmeWorkflow = wfState.workflow === "readme_drafter";
+    const hasGithubUrl = parseGithubUrl(cleanText) !== null;
+
+    if (isReadmeWorkflow || hasGithubUrl) {
+      const placeholder = await client.chat.postMessage({
+        channel: channelId,
+        thread_ts: threadTs,
+        text: "_thinking..._",
+      });
+      const placeholderTs = placeholder.ts!;
+
+      try {
+        const result = await advanceWorkflow(session, cleanText, knowledge);
+
+        await updateMessageSafely(client, channelId, placeholderTs, result.response);
+
+        if (result.artifact) {
+          const wfState = (result.updatedState ?? session.workflowState) as { inputs?: Record<string, string> };
+          const serviceName = wfState.inputs?.serviceName ?? "service";
+          const filename = `${serviceName.replace(/[^a-z0-9-]/gi, "-").toLowerCase()}-readme.md`;
+          await client.files.upload({
+            channels: channelId,
+            thread_ts: threadTs,
+            filename,
+            content: result.artifact,
+            filetype: "markdown",
+            initial_comment: `Here's the README for *${serviceName}* — copy it straight into your repo.`,
+          });
+        }
+
+        // Persist workflow state
+        if (result.updatedState) {
+          await updateWorkflow(
+            threadTs,
+            "readme_drafter",
+            result.updatedState as ReadmeDrafterState
+          );
+        }
+        if (result.done) {
+          await updateWorkflow(threadTs, null, {});
+        }
+
+        await removeReactSafely(client, channelId, messageTs, "eyes");
+        await reactSafely(client, channelId, messageTs, "white_check_mark");
+        await appendMessage(threadTs, "assistant", result.response);
+
+        await logInteraction({
+          threadTs,
+          channelId,
+          userId,
+          action: result.done ? "workflow_complete" : "message",
+          serviceName: session.serviceName ?? undefined,
+          workflow: "readme_drafter",
+          inputText: cleanText,
+          responseText: result.response,
+          sreTagged: false,
+          contextUsed: session.contextRefs,
+        });
+      } catch (workflowErr) {
+        const errMsg =
+          workflowErr instanceof Error
+            ? workflowErr.message
+            : "An unexpected error occurred.";
+        await updateMessageSafely(client, channelId, placeholderTs, `⚠️ ${errMsg}`);
+        await removeReactSafely(client, channelId, messageTs, "eyes");
+        await reactSafely(client, channelId, messageTs, "x");
+      }
+      return;
+    }
+
+    // Generic path: stream Claude's response
     const messages = [
       ...session.messages,
       { role: "user" as const, content: cleanText },
     ];
 
-    // Post a placeholder message we'll update as Claude streams
     const placeholder = await client.chat.postMessage({
       channel: channelId,
       thread_ts: threadTs,
@@ -131,7 +214,6 @@ async function processMessage({
     });
     const placeholderTs = placeholder.ts!;
 
-    // Stream Claude's response, updating the placeholder periodically
     let accumulated = "";
     let charsSinceUpdate = 0;
     const chunks: string[] = [];
@@ -149,21 +231,14 @@ async function processMessage({
 
     const fullResponse = chunks.join("");
 
-    // Final update — remove cursor indicator
     await updateMessageSafely(client, channelId, placeholderTs, fullResponse);
-
-    // Swap reactions: remove 👀, add ✅
     await removeReactSafely(client, channelId, messageTs, "eyes");
     await reactSafely(client, channelId, messageTs, "white_check_mark");
-
-    // Persist assistant response
     await appendMessage(threadTs, "assistant", fullResponse);
 
-    // Detect SRE tagging and confidence
     const sreTagged = detectSreTag(fullResponse);
     const confidence = extractConfidence(fullResponse);
 
-    // Write audit log
     await logInteraction({
       threadTs,
       channelId,

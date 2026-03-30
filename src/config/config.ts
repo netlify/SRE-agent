@@ -13,7 +13,7 @@ dotenv.config();
 
 const configSchema = z.object({
   // Slack
-  slackBotToken: z.string().min(1),
+  slackBotToken: z.string().default(""),
   slackAppToken: z.string().default(""),       // Socket Mode (local dev)
   slackSigningSecret: z.string().default(""),  // HTTP mode (production)
 

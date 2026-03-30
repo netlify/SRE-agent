@@ -103,6 +103,33 @@ export async function complete(
   return chunks.join("");
 }
 
+/**
+ * Non-streaming completion with an explicit system prompt.
+ * Used by workflow state machines that need a specific system prompt
+ * (e.g. JSON extraction calls, artifact generation).
+ */
+export async function completeWithSystemPrompt(
+  systemPrompt: string,
+  messages: Message[]
+): Promise<string> {
+  try {
+    const response = await client.messages.create({
+      model: config.claudeModel,
+      max_tokens: config.maxTokens,
+      system: systemPrompt,
+      messages,
+    });
+    const block = response.content[0];
+    return block.type === "text" ? block.text : "";
+  } catch (err) {
+    if (err instanceof Anthropic.RateLimitError) {
+      throw new Error("Rate limit reached — please try again in a moment.");
+    }
+    console.error("Anthropic API error:", err);
+    throw err;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Response analysis helpers
 // ---------------------------------------------------------------------------
@@ -124,7 +151,10 @@ export function detectSreTag(responseText: string): boolean {
  * Returns a value between 0 and 1, or undefined if not expressed.
  */
 export function extractConfidence(responseText: string): number | undefined {
-  const match = responseText.match(/confidence[:\s]+(\d{1,3})\s*%/i);
+  // Matches "Confidence: 75%" or "about 60% confident"
+  const match =
+    responseText.match(/confidence[:\s]+(\d{1,3})\s*%/i) ??
+    responseText.match(/(\d{1,3})\s*%\s+confident/i);
   if (!match) return undefined;
   const pct = parseInt(match[1], 10);
   return Math.min(Math.max(pct / 100, 0), 1);

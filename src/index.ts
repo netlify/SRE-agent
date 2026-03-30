@@ -11,10 +11,16 @@
 import { App, LogLevel } from "@slack/bolt";
 import { runMigrations, closeDb } from "./db/database.js";
 import { loadSystemPrompt } from "./agent/claudeClient.js";
+import { loadKnowledge } from "./knowledge.js";
 import { registerHandlers } from "./slack/handler.js";
 import { config, isProduction, useSocketMode } from "./config/config.js";
 
 async function main(): Promise<void> {
+  if (!config.slackBotToken) {
+    console.error("Error: SLACK_BOT_TOKEN is required. Add it to your .env file.");
+    process.exit(1);
+  }
+
   console.info(`Starting SRE agent (environment: ${config.nodeEnv})`);
 
   // Apply DB migrations
@@ -22,6 +28,10 @@ async function main(): Promise<void> {
 
   // Load system prompt from knowledge repo (falls back to inline if not found)
   loadSystemPrompt();
+
+  // Load full knowledge base for workflows
+  const knowledge = loadKnowledge(config.knowledgeLocalPath);
+  console.info(`Knowledge base loaded (${Object.keys(knowledge.workflows).length} workflows)`);
 
   // Initialise Slack app
   const app = new App({
@@ -33,7 +43,7 @@ async function main(): Promise<void> {
   });
 
   // Register event handlers
-  registerHandlers(app);
+  registerHandlers(app, knowledge);
 
   // Graceful shutdown
   const shutdown = async (signal: string): Promise<void> => {
