@@ -12,7 +12,6 @@
 import { createInterface } from "node:readline";
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -214,7 +213,7 @@ export async function main(): Promise<void> {
 }
 
 // Run only when executed directly — not when imported in tests
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (require.main === module) {
   main().catch((err) => {
     console.error(err);
     process.exit(1);
