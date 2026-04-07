@@ -36,7 +36,7 @@ export interface Session {
 // Workflows
 // ---------------------------------------------------------------------------
 
-export type WorkflowName = "slo_workshop" | "runbook_drafter";
+export type WorkflowName = "slo_workshop" | "runbook_drafter" | "readme_drafter";
 
 // Each workflow stores its own progress shape in the JSONB workflowState column.
 // Using a discriminated union keeps the types precise without a schema change.
@@ -44,6 +44,7 @@ export type WorkflowName = "slo_workshop" | "runbook_drafter";
 export type WorkflowState =
   | SloWorkflowState
   | RunbookWorkflowState
+  | ReadmeDrafterState
   | Record<string, never>; // empty — no active workflow
 
 export interface SloWorkflowState {
@@ -63,6 +64,12 @@ export interface SliDefinition {
   type: "availability" | "latency" | "error_rate";
   query?: string;
   threshold?: number;
+}
+
+export interface ReadmeDrafterState {
+  workflow: "readme_drafter";
+  step: number;
+  inputs: Record<string, string>;
 }
 
 export interface RunbookWorkflowState {
@@ -100,6 +107,28 @@ export interface AuditEntry {
   confidence?: number;
   sreTagged: boolean;
   contextUsed: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Knowledge base
+// ---------------------------------------------------------------------------
+
+export interface KnowledgeBase {
+  systemPrompt: string;
+  workflows: Record<string, string>;
+  standards: Record<string, string>;
+  templates: Record<string, string>;
+}
+
+// ---------------------------------------------------------------------------
+// Workflow results
+// ---------------------------------------------------------------------------
+
+export interface WorkflowResult {
+  response: string;
+  artifact?: string;
+  done: boolean;
+  updatedState?: ReadmeDrafterState;
 }
 
 // ---------------------------------------------------------------------------

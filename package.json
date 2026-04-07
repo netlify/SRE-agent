@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
+    "dev:cli": "tsx src/cli.ts",
     "start": "node dist/index.js",
     "db:setup": "tsx scripts/dbSetup.ts",
     "test": "vitest run",
