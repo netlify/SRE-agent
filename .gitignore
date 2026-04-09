@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment / secrets — never commit plaintext
+.env
+_infra/config/**/secrets.yaml
+
+# Local dev data
+output/
+sre-agent-knowledge/
+
+# macOS
+.DS_Store

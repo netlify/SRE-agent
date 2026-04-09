@@ -1,0 +1,32 @@
+# Commit this file to argocd-root at:
+#   environments/aws/production/sre-agent-appset.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: sre-agent-production-aws
+  namespace: argocd
+spec:
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            clusters.netlify.com/name: services-cmh-prod-1
+  template:
+    metadata:
+      name: "sre-agent-{{nameNormalized}}"
+      labels:
+        releng.netlify.com/application: "sre-agent"
+        releng.netlify.com/environment: production
+    spec:
+      project: "netlify-apps"
+      source:
+        repoURL: git@github.com:netlify/argocd-root.git
+        path: applications/aws/production/sre-agent
+        targetRevision: HEAD
+      destination:
+        server: "{{server}}"
+        namespace: sre-agent-production
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
