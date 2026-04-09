@@ -16,12 +16,15 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
+# Bake in knowledge base (lives in this repo)
+COPY sre-agent-knowledge ./sre-agent-knowledge
+
 # Non-root user for security
 RUN useradd -m -u 1000 agent
 USER agent
 
-# Blueprints and knowledge repos mounted at runtime via K8s volumes
-VOLUME ["/data/blueprints", "/data/sre-agent-knowledge"]
+# Blueprints repo mounted at runtime via K8s init container
+VOLUME ["/data/blueprints"]
 
 EXPOSE 3000
 

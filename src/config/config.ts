@@ -32,8 +32,7 @@ const configSchema = z.object({
   // Repos
   blueprintsRepoUrl: z.string().default(""),
   blueprintsLocalPath: z.string().default("/data/blueprints"),
-  knowledgeRepoUrl: z.string().default(""),
-  knowledgeLocalPath: z.string().default("/data/sre-agent-knowledge"),
+  knowledgeLocalPath: z.string().default("/app/sre-agent-knowledge"),
 
   // Agent behaviour
   sreTeamSlackId: z.string().default(""),
@@ -54,7 +53,6 @@ function loadConfig() {
     githubOrg: process.env.GITHUB_ORG,
     blueprintsRepoUrl: process.env.BLUEPRINTS_REPO_URL,
     blueprintsLocalPath: process.env.BLUEPRINTS_LOCAL_PATH,
-    knowledgeRepoUrl: process.env.KNOWLEDGE_REPO_URL,
     knowledgeLocalPath: process.env.KNOWLEDGE_LOCAL_PATH,
     sreTeamSlackId: process.env.SRE_TEAM_SLACK_ID,
     claudeModel: process.env.CLAUDE_MODEL,

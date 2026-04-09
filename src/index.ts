@@ -48,9 +48,14 @@ async function main(): Promise<void> {
   } else {
     const healthPort = parseInt(process.env.PORT ?? "3000", 10);
     http
-      .createServer((_req, res) => {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ok" }));
+      .createServer((req, res) => {
+        if (req.url === "/health") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ status: "ok" }));
+        } else {
+          res.writeHead(404);
+          res.end();
+        }
       })
       .listen(healthPort);
   }

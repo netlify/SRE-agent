@@ -12,5 +12,8 @@ _infra/config/**/secrets.yaml
 output/
 sre-agent-knowledge/
 
+# ArgoCD manifests — commit these to argocd-root, not this repo
+argocd/
+
 # macOS
 .DS_Store
