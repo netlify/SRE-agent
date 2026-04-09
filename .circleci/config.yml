@@ -41,6 +41,10 @@ workflows:
           context: [shared-secrets, ksg-orb, deploy-dependencies]
           requires:
             - Run tests
+          filters:
+            branches:
+              only:
+                - main
       - ksg/deploy-with-argocd:
           name: Deploy to Staging
           slack_channel: notify-sre
@@ -48,6 +52,10 @@ workflows:
           context: [ksg-orb, shared-secrets, deploy-dependencies, clone-repo]
           requires:
             - Create Image and Artifacts
+          filters:
+            branches:
+              only:
+                - main
       - hold:
           name: Hold for Approval
           type: approval
@@ -85,7 +93,7 @@ workflows:
 jobs:
   run-tests:
     docker:
-      - image: cimg/node:22.0
+      - image: cimg/node:22.22.2
     steps:
       - checkout
       - run:
