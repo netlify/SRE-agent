@@ -15,11 +15,6 @@ variable "region_name" {
   description = "Netlify airport code name for the AWS region (e.g. cmh)"
 }
 
-variable "tags" {
-  description = "Tags to be set at the resource/module level"
-  type        = map(string)
-}
-
 variable "default_tags" {
   description = "Tags to be set at the provider level"
   default     = {}
