@@ -11,8 +11,7 @@
  * - Stream Claude's response by periodically updating the placeholder message
  */
 
-import type { App } from "@slack/bolt";
-import type { WebClient } from "@slack/web-api";
+import type { App, AllMiddlewareArgs } from "@slack/bolt";
 import {
   getOrCreateSession,
   appendMessage,
@@ -104,7 +103,7 @@ interface ProcessMessageArgs {
   threadTs: string;
   messageTs: string;
   userId: string;
-  client: WebClient;
+  client: AllMiddlewareArgs["client"];
   knowledge: KnowledgeBase;
 }
 
@@ -283,7 +282,7 @@ function stripBotMention(text: string): string {
 }
 
 async function reactSafely(
-  client: WebClient,
+  client: AllMiddlewareArgs["client"],
   channel: string,
   timestamp: string,
   name: string
@@ -296,7 +295,7 @@ async function reactSafely(
 }
 
 async function removeReactSafely(
-  client: WebClient,
+  client: AllMiddlewareArgs["client"],
   channel: string,
   timestamp: string,
   name: string
@@ -309,7 +308,7 @@ async function removeReactSafely(
 }
 
 async function updateMessageSafely(
-  client: WebClient,
+  client: AllMiddlewareArgs["client"],
   channel: string,
   ts: string,
   text: string

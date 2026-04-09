@@ -8,12 +8,13 @@
  * - Graceful shutdown on SIGINT / SIGTERM
  */
 
-import { App, LogLevel } from "@slack/bolt";
+import { App, ExpressReceiver, LogLevel } from "@slack/bolt";
+import http from "node:http";
 import { runMigrations, closeDb } from "./db/database.js";
 import { loadSystemPrompt } from "./agent/claudeClient.js";
 import { loadKnowledge } from "./knowledge.js";
 import { registerHandlers } from "./slack/handler.js";
-import { config, isProduction, useSocketMode } from "./config/config.js";
+import { config, useSocketMode } from "./config/config.js";
 
 async function main(): Promise<void> {
   if (!config.slackBotToken) {
@@ -33,12 +34,38 @@ async function main(): Promise<void> {
   const knowledge = loadKnowledge(config.knowledgeLocalPath);
   console.info(`Knowledge base loaded (${Object.keys(knowledge.workflows).length} workflows)`);
 
+  // In HTTP mode, create an explicit ExpressReceiver so we can add /health
+  // to the same Express app that handles Slack events, before starting.
+  // In Socket Mode, Bolt opens no HTTP port, so we run a minimal server instead.
+  const receiver = useSocketMode
+    ? undefined
+    : new ExpressReceiver({ signingSecret: config.slackSigningSecret });
+
+  if (receiver) {
+    receiver.router.get("/health", (_req, res) => {
+      res.status(200).json({ status: "ok" });
+    });
+  } else {
+    const healthPort = parseInt(process.env.PORT ?? "3000", 10);
+    http
+      .createServer((req, res) => {
+        if (req.url === "/health") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ status: "ok" }));
+        } else {
+          res.writeHead(404);
+          res.end();
+        }
+      })
+      .listen(healthPort);
+  }
+
   // Initialise Slack app
   const app = new App({
     token: config.slackBotToken,
-    signingSecret: isProduction ? config.slackSigningSecret : undefined,
-    socketMode: useSocketMode,
-    appToken: useSocketMode ? config.slackAppToken : undefined,
+    ...(receiver
+      ? { receiver }
+      : { socketMode: true, appToken: config.slackAppToken }),
     logLevel: config.logLevel === "debug" ? LogLevel.DEBUG : LogLevel.INFO,
   });
 
