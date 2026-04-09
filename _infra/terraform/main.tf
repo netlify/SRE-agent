@@ -5,6 +5,7 @@ module "nf_service" {
   account_name = local.account_name
   region_name  = var.region_name
   environment  = var.environment
+  tags         = var.tags
 }
 
 module "nf_rds" {
@@ -14,6 +15,7 @@ module "nf_rds" {
   account_name        = local.account_name
   region_name         = var.region_name
   environment         = var.environment
+  tags                = var.tags
   instance_type       = var.rds_instance_type
   engine              = var.engine
   engine_version      = var.engine_version

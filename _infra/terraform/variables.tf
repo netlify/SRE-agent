@@ -15,10 +15,10 @@ variable "region_name" {
   description = "Netlify airport code name for the AWS region (e.g. cmh)"
 }
 
-variable "default_tags" {
-  description = "Tags to be set at the provider level"
-  default     = {}
+variable "tags" {
+  description = "Tags to be applied to resources"
   type        = map(string)
+  default     = {}
 }
 
 variable "rds_instance_type" {
