@@ -6,7 +6,7 @@ engine            = "aurora-postgresql"
 engine_version    = "16.4"
 family            = "aurora-postgresql16"
 
-default_tags = {
+tags = {
   service     = "sre-agent"
   environment = "staging"
   managed_by  = "spacelift"
