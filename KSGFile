@@ -13,12 +13,10 @@ cloud_provider: AWS
 secrets: {}
 certificates: {}
 
-# Fill these in after running Terraform:
-#   cd _terraform/infra && terraform output pod_security_group_id
 security_group_policy:
   staging:
     security_group_ids:
-      - REPLACE_WITH_STAGING_POD_SG_ID
+      - sg-0d1bdf27566136b75
   production:
     security_group_ids:
       - REPLACE_WITH_PRODUCTION_POD_SG_ID
