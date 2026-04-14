@@ -30,7 +30,7 @@ COPY --from=builder /app/dist ./dist
 
 COPY sre-agent-knowledge ./sre-agent-knowledge
 
-RUN useradd -m -u 1000 agent
+RUN useradd -M agent
 USER agent
 
 VOLUME ["/data/blueprints"]
