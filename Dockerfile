@@ -1,29 +1,38 @@
-FROM node:22-slim
+# --- Build stage ---
+FROM node:22-slim AS builder
 
 WORKDIR /app
 
-# Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies first (layer cache)
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 
-# Copy source and build
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-# Bake in knowledge base (lives in this repo)
+# --- Runtime stage ---
+FROM node:22-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package*.json ./
+RUN npm ci --only=production
+
+COPY --from=builder /app/dist ./dist
+
 COPY sre-agent-knowledge ./sre-agent-knowledge
 
-# Non-root user for security
 RUN useradd -m -u 1000 agent
 USER agent
 
-# Blueprints repo mounted at runtime via K8s init container
 VOLUME ["/data/blueprints"]
 
 EXPOSE 3000
