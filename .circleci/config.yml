@@ -31,7 +31,7 @@ workflows:
     jobs:
       - ksg/start-pipeline:
           name: Start Pipeline
-          slack_channel: notify-sre
+          slack_channel: notify-infra
           context: [ksg-orb]
       - run-tests:
           name: Run tests
@@ -47,7 +47,7 @@ workflows:
                 - main
       - ksg/deploy-with-argocd:
           name: Deploy to Staging
-          slack_channel: notify-sre
+          slack_channel: notify-infra
           environment: staging
           context: [ksg-orb, shared-secrets, deploy-dependencies, clone-repo]
           requires:
@@ -67,7 +67,7 @@ workflows:
                 - main
       - ksg/request-approval:
           name: Send approval notification to Slack
-          slack_channel: notify-sre
+          slack_channel: notify-infra
           cloud_provider: AWS
           environment: production
           approval_step_name: Hold for Approval
@@ -81,7 +81,7 @@ workflows:
       - ksg/deploy-with-argocd:
           name: Deploy to Production
           environment: production
-          slack_channel: notify-sre
+          slack_channel: notify-infra
           context: [ksg-orb, shared-secrets, deploy-dependencies, clone-repo]
           requires:
             - Hold for Approval
