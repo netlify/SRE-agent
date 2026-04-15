@@ -45,12 +45,25 @@ workflows:
             branches:
               only:
                 - main
+      - ksg/upload-to-vault:
+          name: Upload secrets to Vault staging
+          environment: staging
+          service_name: sre-agent
+          commit_sha: $CIRCLE_SHA1
+          context: [shared-secrets, deploy-dependencies, clone-repo]
+          requires:
+            - Create Image and Artifacts
+          filters:
+            branches:
+              only:
+                - main
       - ksg/deploy-with-argocd:
           name: Deploy to Staging
           slack_channel: notify-infra
           environment: staging
           context: [ksg-orb, shared-secrets, deploy-dependencies, clone-repo]
           requires:
+            - Upload secrets to Vault staging
             - Create Image and Artifacts
           filters:
             branches:
