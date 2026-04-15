@@ -19,7 +19,7 @@ security_group_policy:
       - sg-0d1bdf27566136b75
   production:
     security_group_ids:
-      - REPLACE_WITH_PRODUCTION_POD_SG_ID
+      - sg-0a67accb2e192f24f
 
 service_definition:
   sre-agent:
