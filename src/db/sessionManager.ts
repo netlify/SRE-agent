@@ -99,7 +99,7 @@ export async function appendMessage(
 
   await sql`
     UPDATE sessions
-    SET messages = messages || ${sql.json([message])}
+    SET messages = messages || ${JSON.stringify([message])}::jsonb
     WHERE thread_ts = ${threadTs}
   `;
 }
@@ -117,7 +117,7 @@ export async function updateWorkflow(
   await sql`
     UPDATE sessions
     SET workflow       = ${workflow},
-        workflow_state = ${sql.json(workflowState)}
+        workflow_state = ${JSON.stringify(workflowState)}::jsonb
     WHERE thread_ts = ${threadTs}
   `;
 }
