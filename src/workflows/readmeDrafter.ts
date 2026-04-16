@@ -273,7 +273,6 @@ export async function advanceWorkflow(
         };
       }
 
-      const filledFields = Object.keys(mergedInputs);
       const ackPrefix = filledFields.length > 0
         ? `Fetched *${coords.owner}/${coords.repo}* — a few questions to fill in the gaps.\n\n`
         : `Fetched *${coords.owner}/${coords.repo}* — couldn't determine much from the files, so let's go through a few questions.\n\n`;
