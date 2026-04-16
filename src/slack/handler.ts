@@ -105,9 +105,9 @@ async function processMessage({
       try {
         const result = await advanceWorkflow(session, cleanText, knowledge);
 
-        await updateMessageSafely(client, channelId, placeholderTs, result.response);
-
         if (result.artifact) {
+          // Delete the placeholder so the file upload is the only message (no "(edited)")
+          await deleteSafely(client, channelId, placeholderTs);
           const wfState = (result.updatedState ?? session.workflowState) as { inputs?: Record<string, string> };
           const serviceName = wfState.inputs?.serviceName ?? "service";
           const filename = `${serviceName.replace(/[^a-z0-9-]/gi, "-").toLowerCase()}-readme.md`;
@@ -116,8 +116,10 @@ async function processMessage({
             threadTs,
             filename,
             content: result.artifact,
-            initialComment: `Here's the README for *${serviceName}* — copy it straight into your repo.`,
+            initialComment: result.response,
           });
+        } else {
+          await updateMessageSafely(client, channelId, placeholderTs, result.response);
         }
 
         // Persist workflow state
@@ -252,6 +254,18 @@ async function reactSafely(
     await client.reactions.add({ channel, timestamp, name });
   } catch {
     // Reaction failures are non-fatal (e.g. already reacted)
+  }
+}
+
+async function deleteSafely(
+  client: AllMiddlewareArgs["client"],
+  channel: string,
+  ts: string
+): Promise<void> {
+  try {
+    await client.chat.delete({ channel, ts });
+  } catch {
+    // best effort
   }
 }
 
