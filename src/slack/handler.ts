@@ -52,45 +52,6 @@ export function registerHandlers(app: App, knowledge: KnowledgeBase): void {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // message — follow-up in a thread where we have an active session
-  // -------------------------------------------------------------------------
-  app.message(async ({ message, client }) => {
-    // Ignore bot messages and top-level (non-thread) messages
-    if (
-      message.subtype === "bot_message" ||
-      !("thread_ts" in message) ||
-      !message.thread_ts
-    ) {
-      return;
-    }
-
-    // Only respond if there's already a session for this thread
-    const { getDb } = await import("../db/database.js");
-    const sql = getDb();
-    const rows = await sql`
-      SELECT 1 FROM sessions WHERE thread_ts = ${message.thread_ts}
-    `;
-    if (rows.length === 0) return;
-
-    const channelId = message.channel;
-    const threadTs = message.thread_ts;
-    const messageTs = message.ts;
-    const userId = ("user" in message && message.user) ? message.user : "unknown";
-    const text = ("text" in message && message.text) ? message.text : "";
-
-    await reactSafely(client, channelId, messageTs, "eyes");
-
-    void processMessage({
-      text,
-      channelId,
-      threadTs,
-      messageTs,
-      userId,
-      client,
-      knowledge,
-    });
-  });
 }
 
 // ---------------------------------------------------------------------------
