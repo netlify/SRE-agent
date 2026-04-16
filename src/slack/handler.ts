@@ -111,13 +111,12 @@ async function processMessage({
           const wfState = (result.updatedState ?? session.workflowState) as { inputs?: Record<string, string> };
           const serviceName = wfState.inputs?.serviceName ?? "service";
           const filename = `${serviceName.replace(/[^a-z0-9-]/gi, "-").toLowerCase()}-readme.md`;
-          await client.files.upload({
-            channels: channelId,
-            thread_ts: threadTs,
+          await uploadFileSafely(client, {
+            channelId,
+            threadTs,
             filename,
             content: result.artifact,
-            filetype: "markdown",
-            initial_comment: `Here's the README for *${serviceName}* — copy it straight into your repo.`,
+            initialComment: `Here's the README for *${serviceName}* — copy it straight into your repo.`,
           });
         }
 
@@ -266,6 +265,47 @@ async function removeReactSafely(
     await client.reactions.remove({ channel, timestamp, name });
   } catch {
     // best effort
+  }
+}
+
+interface UploadFileArgs {
+  channelId: string;
+  threadTs: string;
+  filename: string;
+  content: string;
+  initialComment: string;
+}
+
+async function uploadFileSafely(
+  client: AllMiddlewareArgs["client"],
+  { channelId, threadTs, filename, content, initialComment }: UploadFileArgs
+): Promise<void> {
+  try {
+    const { upload_url, file_id } = await client.files.getUploadURLExternal({
+      filename,
+      length: Buffer.byteLength(content, "utf8"),
+    }) as { upload_url: string; file_id: string };
+
+    await fetch(upload_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: content,
+    });
+
+    await client.files.completeUploadExternal({
+      files: [{ id: file_id, title: filename }],
+      channel_id: channelId,
+      thread_ts: threadTs,
+      initial_comment: initialComment,
+    });
+  } catch (err) {
+    console.error("File upload failed:", err);
+    // Fall back to posting the content inline as a code block
+    await client.chat.postMessage({
+      channel: channelId,
+      thread_ts: threadTs,
+      text: `${initialComment}\n\`\`\`\n${content}\n\`\`\``,
+    });
   }
 }
 
