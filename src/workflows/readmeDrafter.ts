@@ -259,11 +259,6 @@ export async function advanceWorkflow(
       };
 
       const filledFields = Object.keys(mergedInputs);
-      const ackPrefix =
-        filledFields.length > 0
-          ? `I fetched *${coords.owner}/${coords.repo}* and pre-filled: ${filledFields.join(", ")}.\n\n`
-          : `I fetched *${coords.owner}/${coords.repo}* but couldn't determine much from the files.\n\n`;
-
       // All fields filled → generate immediately
       if (targetStep >= STEPS.length) {
         const generatePrompt = buildGeneratePrompt(mergedInputs, knowledge);
@@ -271,12 +266,16 @@ export async function advanceWorkflow(
           { role: "user", content: generatePrompt },
         ]);
         return {
-          response: `${ackPrefix}Here is your README:`,
+          response: `Here's the README for *${coords.repo}* — copy it straight into your repo.`,
           artifact,
           done: true,
           updatedState,
         };
       }
+
+      const ackPrefix = filledFields.length > 0
+        ? `Fetched *${coords.owner}/${coords.repo}* — a few questions to fill in the gaps.\n\n`
+        : `Fetched *${coords.owner}/${coords.repo}* — couldn't determine much from the files, so let's go through a few questions.\n\n`;
 
       const nextStepDef = STEPS[targetStep];
       return {
@@ -294,7 +293,7 @@ export async function advanceWorkflow(
       { role: "user", content: generatePrompt },
     ]);
     return {
-      response: "Here is your README:",
+      response: "Here's your README — copy it straight into your repo.",
       artifact,
       done: true,
     };
@@ -344,7 +343,7 @@ export async function advanceWorkflow(
         { role: "user", content: generatePrompt },
       ]);
       return {
-        response: "Here is your README:",
+        response: "Here's your README — copy it straight into your repo.",
         artifact,
         done: true,
         updatedState,
