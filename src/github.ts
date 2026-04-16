@@ -26,7 +26,7 @@ const CANDIDATE_FILES = [
 ];
 
 export function parseGithubUrl(text: string): RepoCoordinates | null {
-  const match = text.match(/github\.com\/([^/#?.\s]+)\/([^/#?.\s]+)/);
+  const match = text.match(/github\.com\/([^/#?.\s>]+)\/([^/#?.\s>]+)/);
   if (!match) return null;
   const repo = match[2].replace(/\.git$/, "");
   if (!repo) return null;
