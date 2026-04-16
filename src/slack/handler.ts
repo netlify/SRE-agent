@@ -150,6 +150,7 @@ async function processMessage({
           contextUsed: session.contextRefs,
         });
       } catch (workflowErr) {
+        console.error(`Workflow error in thread ${threadTs}:`, workflowErr);
         const errMsg =
           workflowErr instanceof Error
             ? workflowErr.message
