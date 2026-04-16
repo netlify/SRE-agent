@@ -31,15 +31,23 @@ interface SessionRow {
   updated_at: Date;
 }
 
+function parseJsonb<T>(value: unknown, fallback: T): T {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === "string") {
+    try { return JSON.parse(value) as T; } catch { return fallback; }
+  }
+  return value as T;
+}
+
 function rowToSession(row: SessionRow): Session {
   return {
     threadTs: row.thread_ts,
     channelId: row.channel_id,
     serviceName: row.service_name,
     workflow: (row.workflow as WorkflowName) ?? null,
-    workflowState: (row.workflow_state as WorkflowState) ?? {},
-    messages: (row.messages as Message[]) ?? [],
-    contextRefs: (row.context_refs as string[]) ?? [],
+    workflowState: parseJsonb<WorkflowState>(row.workflow_state, {}),
+    messages: parseJsonb<Message[]>(row.messages, []),
+    contextRefs: parseJsonb<string[]>(row.context_refs, []),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -91,7 +99,7 @@ export async function appendMessage(
 
   await sql`
     UPDATE sessions
-    SET messages = messages || ${JSON.stringify([message])}::jsonb
+    SET messages = messages || ${sql.json([message])}
     WHERE thread_ts = ${threadTs}
   `;
 }
@@ -109,7 +117,7 @@ export async function updateWorkflow(
   await sql`
     UPDATE sessions
     SET workflow       = ${workflow},
-        workflow_state = ${JSON.stringify(workflowState)}::jsonb
+        workflow_state = ${sql.json(workflowState)}
     WHERE thread_ts = ${threadTs}
   `;
 }
