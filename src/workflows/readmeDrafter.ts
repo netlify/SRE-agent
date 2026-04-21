@@ -1,5 +1,5 @@
 import { completeWithSystemPrompt } from "../agent/claudeClient.js";
-import { parseGithubUrl, fetchRepoContext } from "../github.js";
+import { parseGithubUrl, fetchRepoContext, fetchReadmeFile } from "../github.js";
 import type {
   KnowledgeBase,
   Session,
@@ -131,6 +131,35 @@ const STEPS: StepDef[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Intent classification
+// ---------------------------------------------------------------------------
+
+type ReadmeIntent = "create" | "review" | "use_as_template";
+
+async function classifyIntent(message: string): Promise<ReadmeIntent> {
+  const response = await completeWithSystemPrompt(
+    "You are an intent classifier. Reply with exactly one word.",
+    [
+      {
+        role: "user",
+        content: `A user sent this message to an SRE agent that helps with README files. Classify their intent:
+
+- "create": they want to create a new README for the repo or service at the URL
+- "review": they want feedback or improvement suggestions on an existing README
+- "use_as_template": they want to use the structure of the README at that URL as a template for a different service
+
+Reply with exactly one of: create, review, use_as_template
+
+Message: "${message}"`,
+      },
+    ]
+  );
+  const intent = response.trim().toLowerCase();
+  if (intent === "review" || intent === "use_as_template") return intent;
+  return "create";
+}
+
+// ---------------------------------------------------------------------------
 // GitHub repo inference helpers
 // ---------------------------------------------------------------------------
 
@@ -247,21 +276,68 @@ export async function advanceWorkflow(
   if (step === 0 && userMessage.trim()) {
     const coords = parseGithubUrl(userMessage);
     if (coords) {
+      const intent = await classifyIntent(userMessage);
+
+      // --- review: fetch the README and return improvement suggestions ---
+      if (intent === "review") {
+        const readmeContent = await fetchReadmeFile(coords);
+        if (!readmeContent) {
+          return {
+            response: `I couldn't find a README in *${coords.owner}/${coords.repo}*. Make sure the repo is public and has a README.md at the root.`,
+            done: true,
+          };
+        }
+        const reviewPrompt = `Review the following README and provide concrete, actionable improvement suggestions. Be specific about what is missing, unclear, or could be structured better. Group your feedback into a short list of recommendations.
+
+\`\`\`markdown
+${readmeContent}
+\`\`\``;
+        const response = await completeWithSystemPrompt(systemPrompt, [
+          { role: "user", content: reviewPrompt },
+        ]);
+        return { response, done: true };
+      }
+
+      // --- use_as_template: fetch the reference README, then start the normal Q&A ---
+      if (intent === "use_as_template") {
+        const templateContent = await fetchReadmeFile(coords);
+        if (!templateContent) {
+          return {
+            response: `I couldn't find a README in *${coords.owner}/${coords.repo}* to use as a template. Make sure the repo is public and has a README.md at the root.`,
+            done: true,
+          };
+        }
+        const updatedState: ReadmeDrafterState = {
+          workflow: "readme_drafter",
+          step: 0,
+          inputs: {},
+          templateContent,
+        };
+        return {
+          response: `Got it — I'll use the structure of *${coords.owner}/${coords.repo}*'s README as the template.\n\n${STEPS[0].displayPrompt({}, "")}`,
+          done: false,
+          updatedState,
+        };
+      }
+
+      // --- create: infer inputs from the repo and proceed (existing behaviour) ---
       const repoContext = await fetchRepoContext(coords); // throws on error
       const inferred = await inferInputsFromRepo(repoContext, systemPrompt);
       const mergedInputs = { ...inferred };
 
       const targetStep = firstUnfilledStep(mergedInputs);
+      const templateContent = (state as ReadmeDrafterState).templateContent;
       const updatedState: ReadmeDrafterState = {
         workflow: "readme_drafter",
         step: targetStep,
         inputs: mergedInputs,
+        templateContent,
       };
 
       const filledFields = Object.keys(mergedInputs);
       // All fields filled → generate immediately
       if (targetStep >= STEPS.length) {
-        const generatePrompt = buildGeneratePrompt(mergedInputs, knowledge);
+        const generatePrompt = buildGeneratePrompt(mergedInputs, knowledge, templateContent);
         const artifact = await completeWithSystemPrompt(systemPrompt, [
           { role: "user", content: generatePrompt },
         ]);
@@ -273,9 +349,10 @@ export async function advanceWorkflow(
         };
       }
 
-      const ackPrefix = filledFields.length > 0
-        ? `Fetched *${coords.owner}/${coords.repo}* — a few questions to fill in the gaps.\n\n`
-        : `Fetched *${coords.owner}/${coords.repo}* — couldn't determine much from the files, so let's go through a few questions.\n\n`;
+      const ackPrefix =
+        filledFields.length > 0
+          ? `Fetched *${coords.owner}/${coords.repo}* — a few questions to fill in the gaps.\n\n`
+          : `Fetched *${coords.owner}/${coords.repo}* — couldn't determine much from the files, so let's go through a few questions.\n\n`;
 
       const nextStepDef = STEPS[targetStep];
       return {
@@ -286,9 +363,11 @@ export async function advanceWorkflow(
     }
   }
 
+  const existingTemplate = (state as ReadmeDrafterState).templateContent;
+
   // Terminal step: generate artifact
   if (step >= STEPS.length) {
-    const generatePrompt = buildGeneratePrompt(existingInputs, knowledge);
+    const generatePrompt = buildGeneratePrompt(existingInputs, knowledge, existingTemplate);
     const artifact = await completeWithSystemPrompt(systemPrompt, [
       { role: "user", content: generatePrompt },
     ]);
@@ -335,10 +414,11 @@ export async function advanceWorkflow(
       workflow: "readme_drafter",
       step: nextStep,
       inputs: updatedInputs,
+      templateContent: existingTemplate,
     };
 
     if (nextStep >= STEPS.length) {
-      const generatePrompt = buildGeneratePrompt(updatedInputs, knowledge);
+      const generatePrompt = buildGeneratePrompt(updatedInputs, knowledge, existingTemplate);
       const artifact = await completeWithSystemPrompt(systemPrompt, [
         { role: "user", content: generatePrompt },
       ]);
@@ -363,6 +443,7 @@ export async function advanceWorkflow(
     workflow: "readme_drafter",
     step,
     inputs: updatedInputs,
+    templateContent: existingTemplate,
   };
 
   // Suppress unused variable warning
@@ -377,10 +458,14 @@ export async function advanceWorkflow(
 
 function buildGeneratePrompt(
   inputs: Record<string, string>,
-  knowledge: KnowledgeBase
+  knowledge: KnowledgeBase,
+  templateContent?: string
 ): string {
-  const template = knowledge.templates["readme"] ?? "";
-  return `Generate a production-ready README for the service "${inputs.serviceName}" using the information below. Fill in the template provided. Return only the completed markdown, no preamble.
+  const template = templateContent ?? knowledge.templates["readme"] ?? "";
+  const templateNote = templateContent
+    ? "Use the reference README below as your structural template — mirror its sections, tone, and level of detail, but write content specific to this service."
+    : "Fill in the template provided.";
+  return `Generate a production-ready README for the service "${inputs.serviceName}" using the information below. ${templateNote} Return only the completed markdown, no preamble.
 
 ## Template
 ${template}
