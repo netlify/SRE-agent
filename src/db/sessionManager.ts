@@ -99,7 +99,7 @@ export async function appendMessage(
 
   await sql`
     UPDATE sessions
-    SET messages = messages || ${JSON.stringify([message])}::jsonb
+    SET messages = messages || jsonb_build_array(${JSON.stringify(message)}::jsonb)
     WHERE thread_ts = ${threadTs}
   `;
 }
