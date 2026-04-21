@@ -96,6 +96,7 @@ vi.mock("../src/agent/claudeClient.js", () => ({
 vi.mock("../src/github.js", () => ({
   parseGithubUrl: vi.fn(),
   fetchRepoContext: vi.fn(),
+  fetchReadmeFile: vi.fn(),
 }));
 
 async function mockClaudeResponse(response: string) {
@@ -353,6 +354,7 @@ describe("README Drafter — GitHub repo URL detection", () => {
       "../src/agent/claudeClient.js"
     );
     vi.mocked(completeWithSystemPrompt)
+      .mockResolvedValueOnce("create") // classifyIntent
       .mockResolvedValueOnce(fullInference) // inference call
       .mockResolvedValueOnce("# my-svc\n..."); // artifact generation
 
@@ -377,6 +379,7 @@ describe("README Drafter — GitHub repo URL detection", () => {
       "../src/agent/claudeClient.js"
     );
     vi.mocked(completeWithSystemPrompt)
+      .mockResolvedValueOnce("create") // classifyIntent
       .mockResolvedValueOnce(partialInference)
       .mockResolvedValueOnce("Who are the consumers?");
 
