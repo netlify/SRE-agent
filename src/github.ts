@@ -53,6 +53,13 @@ function decodeContent(content: string): string {
     : decoded;
 }
 
+export async function fetchReadmeFile(
+  coords: RepoCoordinates
+): Promise<string | null> {
+  const context = await fetchRepoContext(coords);
+  return context.files["README.md"] ?? null;
+}
+
 export async function fetchRepoContext(
   coords: RepoCoordinates
 ): Promise<RepoContext> {

@@ -70,6 +70,7 @@ export interface ReadmeDrafterState {
   workflow: "readme_drafter";
   step: number;
   inputs: Record<string, string>;
+  templateContent?: string;
 }
 
 export interface RunbookWorkflowState {
