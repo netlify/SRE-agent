@@ -62,6 +62,11 @@ export async function* streamResponse(
 ): AsyncGenerator<string> {
   const prepared = prepareMessages(messages, injectedContext);
 
+  console.debug(
+    "[streamResponse] messages count:", prepared.length,
+    "| shapes:", JSON.stringify(prepared.map(m => ({ role: m.role, contentType: typeof m.content, contentLength: typeof m.content === "string" ? m.content.length : null })))
+  );
+
   try {
     const stream = client.messages.stream({
       model: config.claudeModel,
