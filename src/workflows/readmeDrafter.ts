@@ -326,10 +326,7 @@ ${readmeContent}
       const mergedInputs = { ...inferred };
 
       const targetStep = firstUnfilledStep(mergedInputs);
-      const templateContent =
-        "templateContent" in existingInputs
-          ? (existingInputs as unknown as ReadmeDrafterState).templateContent
-          : undefined;
+      const templateContent = (state as ReadmeDrafterState).templateContent;
       const updatedState: ReadmeDrafterState = {
         workflow: "readme_drafter",
         step: targetStep,
