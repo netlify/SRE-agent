@@ -193,7 +193,21 @@ async function processMessage({
 
     const fullResponse = chunks.join("");
 
-    await updateMessageSafely(client, channelId, placeholderTs, fullResponse);
+    // Slack's chat.update silently fails for long messages; upload as a file
+    // for anything over 3000 chars to guarantee the full response is visible.
+    if (fullResponse.length > 3000) {
+      await deleteSafely(client, channelId, placeholderTs);
+      await uploadFileSafely(client, {
+        channelId,
+        threadTs,
+        filename: "response.md",
+        content: fullResponse,
+        initialComment: "",
+      });
+    } else {
+      await updateMessageSafely(client, channelId, placeholderTs, fullResponse);
+    }
+
     await removeReactSafely(client, channelId, messageTs, "eyes");
     await reactSafely(client, channelId, messageTs, "white_check_mark");
     await appendMessage(threadTs, "assistant", fullResponse);
