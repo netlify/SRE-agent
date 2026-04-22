@@ -97,9 +97,13 @@ export async function appendMessage(
   const sql = getDb();
   const message: Message = { role, content };
 
+  // sql.json() sends the value as a properly-typed JSONB parameter, avoiding
+  // the postgres.js behaviour where a string parameter with ::jsonb cast is
+  // sent as a JSONB string literal rather than being parsed as JSON text.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await sql`
     UPDATE sessions
-    SET messages = messages || jsonb_build_array(${JSON.stringify(message)}::jsonb)
+    SET messages = messages || ${sql.json([message] as any)}
     WHERE thread_ts = ${threadTs}
   `;
 }
