@@ -1,0 +1,8 @@
+reviews:
+    high_level_summary: false
+    profile: assertive
+    suggested_reviewers: false
+    poem: false
+    review_status: false
+    auto_review:
+      enabled: false
