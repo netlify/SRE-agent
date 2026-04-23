@@ -1,0 +1,55 @@
+service_name: sre-agent
+project_id: netlify-services
+kubernetes_clusters:
+  staging:
+    - services-cmh-stag-1
+  production:
+    - services-cmh-prod-1
+language: nodejs
+ksg_version: "v2"
+pipeline_template: "deploy-from-circle"
+cloud_provider: AWS
+
+secrets: {}
+certificates: {}
+
+security_group_policy:
+  staging:
+    security_group_ids:
+      - sg-0d1bdf27566136b75
+  production:
+    security_group_ids:
+      - sg-0a67accb2e192f24f
+
+service_definition:
+  sre-agent:
+    # Slack bot — connects outbound to Slack via WebSocket (Socket Mode) or
+    # receives HTTP events (HTTP mode). No inbound LB required.
+    # /health is served on port 3000 in both modes (see src/index.ts).
+    internal-api:
+      common:
+        args: ["node", "dist/index.js"]
+        port: 3000
+        service_port: 80
+        scheme: HTTP
+        health_path: /health
+        node_selector:
+          netlify/env: production
+      staging:
+        replicas: 1
+        requests:
+          cpu: 100m
+          memory: 256M
+        limits:
+          cpu: 500m
+          memory: 512M
+        node_selector:
+          netlify/env: staging
+      production:
+        replicas: 1
+        requests:
+          cpu: 200m
+          memory: 256M
+        limits:
+          cpu: 1000m
+          memory: 512M

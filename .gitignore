@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment / secrets — never commit plaintext
+.env
+_infra/config/**/secrets.yaml
+
+# Local dev data
+output/
+sre-agent-knowledge/
+
+# ArgoCD manifests — commit these to argocd-root, not this repo
+argocd/
+
+# macOS
+.DS_Store

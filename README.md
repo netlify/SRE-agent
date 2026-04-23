@@ -1,8 +1,7 @@
-# SRE Production Readiness Agent
+# SRE Agent
 
 An AI-powered Slack bot that helps Netlify engineers self-serve on production
-readiness. Developers get on-demand guidance grounded in their actual service
-architecture, without waiting for SRE availability.
+readiness and perform other functions such as manage incidents and deployments. Developers get on-demand guidance grounded in their actual service architecture, without waiting for SRE availability.
 
 ---
 
@@ -52,6 +51,10 @@ PostgreSQL                   session state, conversation history, audit log
 | Session manager | `src/db/sessionManager.ts` | CRUD for sessions and audit log. Each Slack thread maps to one session row. Audit writes are fire-and-forget so failures never break responses. |
 | Config | `src/config/config.ts` | All environment config loaded and validated with Zod at startup. App exits immediately if required vars are missing. |
 | Types | `src/types/index.ts` | Shared TypeScript types for sessions, workflows, messages, and audit entries. |
+| GitHub client | `src/github.ts` | Fetches service READMEs and repo metadata from the GitHub API using the configured token. |
+| Knowledge loader | `src/knowledge.ts` | Loads system prompt, standards, tier definitions, and workflow prompts from the local knowledge repo clone at startup. |
+| README drafter | `src/workflows/readmeDrafter.ts` | State-machine workflow that guides a developer through a multi-step interview to generate a production-ready service README. |
+| Local CLI | `src/cli.ts` | Terminal REPL for local dev — exercises knowledge loading, GitHub fetching, and workflow logic without requiring Slack. Run with `npm run dev:cli`. |
 | System prompt | `sre-agent-knowledge/system-prompt.md` | The SRE persona, behavioral rules, and workflow guidance injected as the Claude system prompt. Editable without touching code. |
 | SLO workflow | `sre-agent-knowledge/workflows/slo-workshop.md` | Structured workflow prompt for defining SLIs, setting thresholds, and generating Datadog YAML config. |
 | Runbook workflow | `sre-agent-knowledge/workflows/runbook-drafter.md` | Structured workflow prompt for generating first-draft runbooks via classification + adaptive interview + draft generation. |
@@ -95,15 +98,33 @@ npm install
 cp .env.example .env
 ```
 
-Edit `.env` and fill in:
+Edit `.env` and fill in the required values. See `.env.example` for the full list. The minimum required for local dev:
 
 ```
+# Slack
 SLACK_BOT_TOKEN=xoxb-...
-SLACK_APP_TOKEN=xapp-...       # Socket Mode token for local dev
+SLACK_APP_TOKEN=xapp-...         # Socket Mode token (local dev)
+SLACK_SIGNING_SECRET=...         # HTTP mode (production only)
+
+# Anthropic
 ANTHROPIC_API_KEY=sk-ant-...
+
+# Database
 DATABASE_URL=postgresql://sre_agent:password@localhost:5432/sre_agent
+
+# GitHub
 GITHUB_TOKEN=ghp_...
-SRE_TEAM_SLACK_ID=S...
+GITHUB_ORG=netlify
+
+# Repos (local paths used when running outside K8s)
+BLUEPRINTS_LOCAL_PATH=/data/blueprints
+KNOWLEDGE_LOCAL_PATH=/data/sre-agent-knowledge
+
+# Agent behaviour
+SRE_TEAM_SLACK_ID=S...           # Slack group ID for @sre-team mentions
+CLAUDE_MODEL=claude-opus-4-6
+LOG_LEVEL=info
+NODE_ENV=development
 ```
 
 **4. Set up the database**
@@ -264,9 +285,9 @@ npm run typecheck
 ```
 
 Tests use [Vitest](https://vitest.dev/), which has native TypeScript support
-with no build step required. Sprint 1 tests cover the pure functions in the
-Claude client and Slack handler. Integration tests (Sprint 2+) will cover
-the context assembler and workflow logic.
+with no build step required. Test files are in `tests/` and cover the Claude
+client, Slack handler, GitHub client, knowledge loader, README drafter workflow,
+and the local CLI. All tests are unit-level — no database or API calls required.
 
 ---
 

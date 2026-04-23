@@ -1,0 +1,120 @@
+version: 2.1
+orbs:
+  ksg: netlify/ksg-ci@2
+
+parameters:
+  git_sha:
+    description: The git sha of the commit
+    type: string
+    default: << pipeline.git.revision >>
+  deploy_env:
+    description: The environment to deploy to
+    type: enum
+    enum: [staging, production, ""]
+    default: ""
+
+workflows:
+  force_deploy:
+    when:
+      not:
+        equal: [<< pipeline.parameters.deploy_env >>, ""]
+    jobs:
+      - ksg/deploy-with-argocd:
+          name: Deploy to <<pipeline.parameters.deploy_env>>
+          environment: <<pipeline.parameters.deploy_env>>
+          sha: <<pipeline.parameters.git_sha>>
+          context: [ksg-orb, deploy-dependencies, shared-secrets, clone-repo]
+
+  build-and-deploy:
+    when:
+      equal: [<< pipeline.parameters.deploy_env >>, ""]
+    jobs:
+      - ksg/start-pipeline:
+          name: Start Pipeline
+          slack_channel: notify-infra
+          context: [ksg-orb]
+      - run-tests:
+          name: Run tests
+      - ksg/build-image-and-create-artifacts:
+          name: Create Image and Artifacts
+          cloud_provider: AWS
+          context: [shared-secrets, ksg-orb, deploy-dependencies]
+          requires:
+            - Run tests
+          filters:
+            branches:
+              only:
+                - main
+      - ksg/upload-to-vault:
+          name: Upload secrets to Vault staging
+          environment: staging
+          service_name: sre-agent
+          commit_sha: $CIRCLE_SHA1
+          context: [shared-secrets, deploy-dependencies, clone-repo]
+          requires:
+            - Create Image and Artifacts
+          filters:
+            branches:
+              only:
+                - main
+      - ksg/deploy-with-argocd:
+          name: Deploy to Staging
+          slack_channel: notify-infra
+          environment: staging
+          context: [ksg-orb, shared-secrets, deploy-dependencies, clone-repo]
+          requires:
+            - Upload secrets to Vault staging
+            - Create Image and Artifacts
+          filters:
+            branches:
+              only:
+                - main
+      - hold:
+          name: Hold for Approval
+          type: approval
+          requires:
+            - Deploy to Staging
+          filters:
+            branches:
+              only:
+                - main
+      - ksg/request-approval:
+          name: Send approval notification to Slack
+          slack_channel: notify-infra
+          cloud_provider: AWS
+          environment: production
+          approval_step_name: Hold for Approval
+          context: [ksg-orb]
+          requires:
+            - Deploy to Staging
+          filters:
+            branches:
+              only:
+                - main
+      - ksg/deploy-with-argocd:
+          name: Deploy to Production
+          environment: production
+          slack_channel: notify-infra
+          context: [ksg-orb, shared-secrets, deploy-dependencies, clone-repo]
+          requires:
+            - Hold for Approval
+          filters:
+            branches:
+              only:
+                - main
+
+jobs:
+  run-tests:
+    docker:
+      - image: cimg/node:22.22.2
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: npm ci
+      - run:
+          name: Run tests
+          command: npm test
+      - run:
+          name: Type check
+          command: npm run typecheck

@@ -1,0 +1,23 @@
+slo:
+  name: "[service] - [capability] [SLI type]"
+  description: "[One sentence: what this SLO measures and why it matters]"
+  type: metric
+  query:
+    # Availability SLI: proportion of non-5xx responses
+    numerator: "sum:service.requests.count{service:[service-name],!status_code:5xx}.as_count()"
+    denominator: "sum:service.requests.count{service:[service-name]}.as_count()"
+
+    # Latency SLI: proportion of requests completing within threshold
+    # Uncomment and use instead of availability if defining a latency SLO:
+    # numerator: "sum:service.requests.count{service:[service-name],latency_bucket:under_500ms}.as_count()"
+    # denominator: "sum:service.requests.count{service:[service-name]}.as_count()"
+
+  thresholds:
+    - target: 99.5      # Update to match tier: T1=99.9, T2=99.5, T3=99.0, T4=95.0
+      timeframe: "30d"  # 30-day rolling window — do not change without SRE review
+
+  tags:
+    - "service:[service-name]"    # e.g. service:envelope
+    - "tier:[tier-number]"        # e.g. tier:2
+    - "team:[team-slug]"          # e.g. team:platform
+    - "capability:[capability]"   # e.g. capability:crud-api

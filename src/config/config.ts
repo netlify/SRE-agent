@@ -9,11 +9,12 @@
 import { z } from "zod";
 import dotenv from "dotenv";
 
-dotenv.config();
+dotenv.config({ path: '/app/secrets.yaml' });
+dotenv.config(); // fallback for local dev (.env file)
 
 const configSchema = z.object({
   // Slack
-  slackBotToken: z.string().min(1),
+  slackBotToken: z.string().default(""),
   slackAppToken: z.string().default(""),       // Socket Mode (local dev)
   slackSigningSecret: z.string().default(""),  // HTTP mode (production)
 
@@ -30,10 +31,8 @@ const configSchema = z.object({
   githubOrg: z.string().default("netlify"),
 
   // Repos
-  blueprintsRepoUrl: z.string().default(""),
   blueprintsLocalPath: z.string().default("/data/blueprints"),
-  knowledgeRepoUrl: z.string().default(""),
-  knowledgeLocalPath: z.string().default("/data/sre-agent-knowledge"),
+  knowledgeLocalPath: z.string().default("/app/sre-agent-knowledge"),
 
   // Agent behaviour
   sreTeamSlackId: z.string().default(""),
@@ -52,9 +51,7 @@ function loadConfig() {
     databaseUrl: process.env.DATABASE_URL,
     githubToken: process.env.GITHUB_TOKEN,
     githubOrg: process.env.GITHUB_ORG,
-    blueprintsRepoUrl: process.env.BLUEPRINTS_REPO_URL,
     blueprintsLocalPath: process.env.BLUEPRINTS_LOCAL_PATH,
-    knowledgeRepoUrl: process.env.KNOWLEDGE_REPO_URL,
     knowledgeLocalPath: process.env.KNOWLEDGE_LOCAL_PATH,
     sreTeamSlackId: process.env.SRE_TEAM_SLACK_ID,
     claudeModel: process.env.CLAUDE_MODEL,
@@ -77,3 +74,5 @@ export type Config = typeof config;
 
 export const isProduction = config.nodeEnv === "production";
 export const useSocketMode = Boolean(config.slackAppToken) && !isProduction;
+
+export const BLUEPRINTS_REPO_URL = "https://github.com/netlify/blueprints.git";

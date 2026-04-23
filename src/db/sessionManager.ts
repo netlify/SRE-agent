@@ -31,15 +31,23 @@ interface SessionRow {
   updated_at: Date;
 }
 
+function parseJsonb<T>(value: unknown, fallback: T): T {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === "string") {
+    try { return JSON.parse(value) as T; } catch { return fallback; }
+  }
+  return value as T;
+}
+
 function rowToSession(row: SessionRow): Session {
   return {
     threadTs: row.thread_ts,
     channelId: row.channel_id,
     serviceName: row.service_name,
     workflow: (row.workflow as WorkflowName) ?? null,
-    workflowState: (row.workflow_state as WorkflowState) ?? {},
-    messages: (row.messages as Message[]) ?? [],
-    contextRefs: (row.context_refs as string[]) ?? [],
+    workflowState: parseJsonb<WorkflowState>(row.workflow_state, {}),
+    messages: parseJsonb<Message[]>(row.messages, []),
+    contextRefs: parseJsonb<string[]>(row.context_refs, []),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -89,9 +97,13 @@ export async function appendMessage(
   const sql = getDb();
   const message: Message = { role, content };
 
+  // sql.json() sends the value as a properly-typed JSONB parameter, avoiding
+  // the postgres.js behaviour where a string parameter with ::jsonb cast is
+  // sent as a JSONB string literal rather than being parsed as JSON text.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await sql`
     UPDATE sessions
-    SET messages = messages || ${JSON.stringify([message])}::jsonb
+    SET messages = messages || ${sql.json([message] as any)}
     WHERE thread_ts = ${threadTs}
   `;
 }

@@ -11,20 +11,23 @@
  * - Stream Claude's response by periodically updating the placeholder message
  */
 
-import type { App } from "@slack/bolt";
-import type { WebClient } from "@slack/web-api";
+import type { App, AllMiddlewareArgs } from "@slack/bolt";
 import {
   getOrCreateSession,
   appendMessage,
+  updateWorkflow,
   logInteraction,
 } from "../db/sessionManager.js";
 import { streamResponse, detectSreTag, extractConfidence } from "../agent/claudeClient.js";
+import { parseGithubUrl } from "../github.js";
+import { advanceWorkflow } from "../workflows/readmeDrafter.js";
+import type { KnowledgeBase, ReadmeDrafterState } from "../types/index.js";
 
 // Update the in-progress Slack message every N characters of streamed output.
 // Lower = more responsive, higher = fewer API calls.
 const STREAM_UPDATE_INTERVAL = 150;
 
-export function registerHandlers(app: App): void {
+export function registerHandlers(app: App, knowledge: KnowledgeBase): void {
   // -------------------------------------------------------------------------
   // app_mention — developer sends @sre-agent in a channel
   // -------------------------------------------------------------------------
@@ -45,47 +48,10 @@ export function registerHandlers(app: App): void {
       messageTs,
       userId,
       client,
+      knowledge,
     });
   });
 
-  // -------------------------------------------------------------------------
-  // message — follow-up in a thread where we have an active session
-  // -------------------------------------------------------------------------
-  app.message(async ({ message, client }) => {
-    // Ignore bot messages and top-level (non-thread) messages
-    if (
-      message.subtype === "bot_message" ||
-      !("thread_ts" in message) ||
-      !message.thread_ts
-    ) {
-      return;
-    }
-
-    // Only respond if there's already a session for this thread
-    const { getDb } = await import("../db/database.js");
-    const sql = getDb();
-    const rows = await sql`
-      SELECT 1 FROM sessions WHERE thread_ts = ${message.thread_ts}
-    `;
-    if (rows.length === 0) return;
-
-    const channelId = message.channel;
-    const threadTs = message.thread_ts;
-    const messageTs = message.ts;
-    const userId = ("user" in message && message.user) ? message.user : "unknown";
-    const text = ("text" in message && message.text) ? message.text : "";
-
-    await reactSafely(client, channelId, messageTs, "eyes");
-
-    void processMessage({
-      text,
-      channelId,
-      threadTs,
-      messageTs,
-      userId,
-      client,
-    });
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -98,7 +64,8 @@ interface ProcessMessageArgs {
   threadTs: string;
   messageTs: string;
   userId: string;
-  client: WebClient;
+  client: AllMiddlewareArgs["client"];
+  knowledge: KnowledgeBase;
 }
 
 async function processMessage({
@@ -108,6 +75,7 @@ async function processMessage({
   messageTs,
   userId,
   client,
+  knowledge,
 }: ProcessMessageArgs): Promise<void> {
   const cleanText = stripBotMention(text);
   if (!cleanText.trim()) return;
@@ -118,12 +86,89 @@ async function processMessage({
 
     // Append user message to history
     await appendMessage(threadTs, "user", cleanText);
+
+    // Check if this message should be routed to the readme-drafter workflow:
+    // - Session has an active readme_drafter workflow state, OR
+    // - Message contains a GitHub URL (auto-start readme-drafter)
+    const wfState = session.workflowState as { workflow?: string };
+    const isReadmeWorkflow = wfState.workflow === "readme_drafter";
+    const hasGithubUrl = parseGithubUrl(cleanText) !== null;
+
+    if (isReadmeWorkflow || hasGithubUrl) {
+      const placeholder = await client.chat.postMessage({
+        channel: channelId,
+        thread_ts: threadTs,
+        text: "_thinking..._",
+      });
+      const placeholderTs = placeholder.ts!;
+
+      try {
+        const result = await advanceWorkflow(session, cleanText, knowledge);
+
+        if (result.artifact) {
+          // Delete the placeholder so the file upload is the only message (no "(edited)")
+          await deleteSafely(client, channelId, placeholderTs);
+          const wfState = (result.updatedState ?? session.workflowState) as { inputs?: Record<string, string> };
+          const serviceName = wfState.inputs?.serviceName ?? "service";
+          const filename = `${serviceName.replace(/[^a-z0-9-]/gi, "-").toLowerCase()}-readme.md`;
+          await uploadFileSafely(client, {
+            channelId,
+            threadTs,
+            filename,
+            content: result.artifact,
+            initialComment: result.response,
+          });
+        } else {
+          await updateMessageSafely(client, channelId, placeholderTs, result.response);
+        }
+
+        // Persist workflow state
+        if (result.updatedState) {
+          await updateWorkflow(
+            threadTs,
+            "readme_drafter",
+            result.updatedState as ReadmeDrafterState
+          );
+        }
+        if (result.done) {
+          await updateWorkflow(threadTs, null, {});
+        }
+
+        await removeReactSafely(client, channelId, messageTs, "eyes");
+        await reactSafely(client, channelId, messageTs, "white_check_mark");
+        await appendMessage(threadTs, "assistant", result.response);
+
+        await logInteraction({
+          threadTs,
+          channelId,
+          userId,
+          action: result.done ? "workflow_complete" : "message",
+          serviceName: session.serviceName ?? undefined,
+          workflow: "readme_drafter",
+          inputText: cleanText,
+          responseText: result.response,
+          sreTagged: false,
+          contextUsed: session.contextRefs,
+        });
+      } catch (workflowErr) {
+        console.error(`Workflow error in thread ${threadTs}:`, workflowErr);
+        const errMsg =
+          workflowErr instanceof Error
+            ? workflowErr.message
+            : "An unexpected error occurred.";
+        await updateMessageSafely(client, channelId, placeholderTs, `⚠️ ${errMsg}`);
+        await removeReactSafely(client, channelId, messageTs, "eyes");
+        await reactSafely(client, channelId, messageTs, "x");
+      }
+      return;
+    }
+
+    // Generic path: stream Claude's response
     const messages = [
       ...session.messages,
       { role: "user" as const, content: cleanText },
     ];
 
-    // Post a placeholder message we'll update as Claude streams
     const placeholder = await client.chat.postMessage({
       channel: channelId,
       thread_ts: threadTs,
@@ -131,7 +176,6 @@ async function processMessage({
     });
     const placeholderTs = placeholder.ts!;
 
-    // Stream Claude's response, updating the placeholder periodically
     let accumulated = "";
     let charsSinceUpdate = 0;
     const chunks: string[] = [];
@@ -149,21 +193,28 @@ async function processMessage({
 
     const fullResponse = chunks.join("");
 
-    // Final update — remove cursor indicator
-    await updateMessageSafely(client, channelId, placeholderTs, fullResponse);
+    // Slack's chat.update silently fails for long messages; upload as a file
+    // for anything over 3000 chars to guarantee the full response is visible.
+    if (fullResponse.length > 3000) {
+      await deleteSafely(client, channelId, placeholderTs);
+      await uploadFileSafely(client, {
+        channelId,
+        threadTs,
+        filename: "response.md",
+        content: fullResponse,
+        initialComment: "",
+      });
+    } else {
+      await updateMessageSafely(client, channelId, placeholderTs, fullResponse);
+    }
 
-    // Swap reactions: remove 👀, add ✅
     await removeReactSafely(client, channelId, messageTs, "eyes");
     await reactSafely(client, channelId, messageTs, "white_check_mark");
-
-    // Persist assistant response
     await appendMessage(threadTs, "assistant", fullResponse);
 
-    // Detect SRE tagging and confidence
     const sreTagged = detectSreTag(fullResponse);
     const confidence = extractConfidence(fullResponse);
 
-    // Write audit log
     await logInteraction({
       threadTs,
       channelId,
@@ -208,7 +259,7 @@ function stripBotMention(text: string): string {
 }
 
 async function reactSafely(
-  client: WebClient,
+  client: AllMiddlewareArgs["client"],
   channel: string,
   timestamp: string,
   name: string
@@ -220,8 +271,20 @@ async function reactSafely(
   }
 }
 
+async function deleteSafely(
+  client: AllMiddlewareArgs["client"],
+  channel: string,
+  ts: string
+): Promise<void> {
+  try {
+    await client.chat.delete({ channel, ts });
+  } catch {
+    // best effort
+  }
+}
+
 async function removeReactSafely(
-  client: WebClient,
+  client: AllMiddlewareArgs["client"],
   channel: string,
   timestamp: string,
   name: string
@@ -233,8 +296,49 @@ async function removeReactSafely(
   }
 }
 
+interface UploadFileArgs {
+  channelId: string;
+  threadTs: string;
+  filename: string;
+  content: string;
+  initialComment: string;
+}
+
+async function uploadFileSafely(
+  client: AllMiddlewareArgs["client"],
+  { channelId, threadTs, filename, content, initialComment }: UploadFileArgs
+): Promise<void> {
+  try {
+    const { upload_url, file_id } = await client.files.getUploadURLExternal({
+      filename,
+      length: Buffer.byteLength(content, "utf8"),
+    }) as { upload_url: string; file_id: string };
+
+    await fetch(upload_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: content,
+    });
+
+    await client.files.completeUploadExternal({
+      files: [{ id: file_id, title: filename }],
+      channel_id: channelId,
+      thread_ts: threadTs,
+      initial_comment: initialComment,
+    });
+  } catch (err) {
+    console.error("File upload failed:", err);
+    // Fall back to posting the content inline as a code block
+    await client.chat.postMessage({
+      channel: channelId,
+      thread_ts: threadTs,
+      text: `${initialComment}\n\`\`\`\n${content}\n\`\`\``,
+    });
+  }
+}
+
 async function updateMessageSafely(
-  client: WebClient,
+  client: AllMiddlewareArgs["client"],
   channel: string,
   ts: string,
   text: string
