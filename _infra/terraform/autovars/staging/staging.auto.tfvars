@@ -1,10 +1,6 @@
-environment       = "staging"
-region            = "us-east-2"
-region_name       = "cmh"
-rds_instance_type = "db.t4g.medium"
-engine            = "aurora-postgresql"
-engine_version    = "16.11"
-family            = "aurora-postgresql16"
+environment = "staging"
+region      = "us-east-2"
+region_name = "cmh"
 
 tags = {
   managed_by = "spacelift"
