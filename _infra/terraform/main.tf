@@ -22,6 +22,8 @@ module "nf_rds" {
   family              = var.family
   cluster_parameters  = var.cluster_parameters
   instance_parameters = var.instance_parameters
+  deletion_protection = false # INF-2350: never used, allow destroy
+  skip_final_snapshot = true
   ingress_security_groups = [
     module.nf_service.pod_security_group_id,
   ]
